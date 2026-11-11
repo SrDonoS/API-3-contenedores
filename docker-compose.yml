@@ -1,0 +1,88 @@
+# Levanta los tres contenedores: API Flask, MongoDB y MySQL.
+#
+#     docker compose up -d --build
+#     docker compose exec api python semilla.py     (datos de ejemplo en Mongo, una vez)
+#
+#   API      http://localhost:5000/api/productos
+#   Cliente  http://localhost:5000/
+#   Estado   http://localhost:5000/api/salud        (muestra Mongo y MySQL)
+#   Mongo    mongodb://localhost:27017              (MongoDB Compass)
+#   MySQL    localhost:3307  usuario catalogo / catalogo123   (MySQL Workbench)
+#
+# Apagar:                 docker compose down
+# Apagar y borrar datos:  docker compose down -v
+#
+# Las claves de aqui son de laboratorio. En un sistema real van en un .env
+# que no se sube al repositorio.
+
+services:
+
+  mongo:
+    image: mongo:8.0                 # imagen oficial, no necesita Dockerfile
+    container_name: catalogo-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_datos:/data/db         # los datos sobreviven a "docker compose down"
+    healthcheck:                     # "sano" cuando Mongo responde al ping
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  mysql:
+    image: mysql:8.4                 # imagen oficial, no necesita Dockerfile
+    container_name: catalogo-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root123
+      MYSQL_DATABASE: catalogo
+      MYSQL_USER: catalogo
+      MYSQL_PASSWORD: catalogo123
+    ports:
+      # 3307 en su computador, para no chocar con un MySQL que ya tenga
+      # instalado (XAMPP, Workbench...). Dentro de Docker sigue siendo 3306.
+      - "3307:3306"
+    volumes:
+      - mysql_datos:/var/lib/mysql
+      # Crea las tablas y carga los datos la primera vez que arranca.
+      - ./mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot123"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  api:
+    build: .                         # usa el Dockerfile de esta carpeta
+    image: api-catalogo
+    container_name: catalogo-api
+    restart: unless-stopped
+    depends_on:                      # no arranca hasta que ambas bases respondan
+      mongo:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+    environment:
+      # Dentro de la red de Docker cada contenedor se llama por el nombre de
+      # su servicio ("mongo", "mysql"), no "localhost". Estos valores mandan
+      # sobre los que tenga su .env.
+      MONGO_URI: mongodb://mongo:27017
+      MONGO_DB: catalogo
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_USER: catalogo
+      MYSQL_PASSWORD: catalogo123
+      MYSQL_DB: catalogo
+      HOST: 0.0.0.0
+      PORT: "5000"
+      FLASK_DEBUG: "0"
+    ports:
+      - "5000:5000"
+
+volumes:
+  mongo_datos:
+  mysql_datos:

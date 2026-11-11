@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Catálogo · cliente de prueba</title>
+<style>
+  :root{
+    --navy:#1E2761; --accent:#FF6B35; --mist:#F2F5FB; --line:#D8E0EE;
+    --slate:#3B486B; --muted:#6B7794; --green:#2E9E6B; --red:#C7443B;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font:15px/1.5 system-ui,Segoe UI,Calibri,sans-serif;
+       background:var(--mist);color:var(--slate)}
+  header{background:var(--navy);color:#fff;padding:18px 20px}
+  header h1{margin:0;font-size:19px}
+  header p{margin:4px 0 0;font-size:13px;color:#CADCFC}
+  main{max-width:960px;margin:0 auto;padding:20px}
+  .panel{background:#fff;border:1px solid var(--line);border-radius:10px;
+         padding:16px;margin-bottom:16px}
+  .panel h2{margin:0 0 12px;font-size:15px;color:var(--navy)}
+  .fila{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+  input,select{padding:8px 10px;border:1px solid var(--line);border-radius:6px;
+               font:inherit;flex:1;min-width:130px}
+  button{padding:8px 14px;border:0;border-radius:6px;background:var(--navy);
+         color:#fff;font:inherit;cursor:pointer}
+  button.acc{background:var(--accent)}
+  button.peq{padding:4px 9px;font-size:13px}
+  button.del{background:var(--red)}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th{background:var(--navy);color:#fff;text-align:left;padding:8px;font-weight:600}
+  td{padding:8px;border-bottom:1px solid var(--line)}
+  tr:nth-child(even) td{background:var(--mist)}
+  .id{font-family:Consolas,monospace;font-size:11px;color:var(--muted)}
+  #aviso{padding:10px 12px;border-radius:6px;margin-bottom:12px;display:none}
+  .ok{background:#E6F4EE;color:var(--green);border:1px solid var(--green)}
+  .err{background:#FBECEB;color:var(--red);border:1px solid var(--red)}
+  footer{text-align:center;color:var(--muted);font-size:12px;padding:16px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Catálogo · cliente de prueba</h1>
+  <p>La misma API REST que en Flask, ahora guardando en MongoDB Atlas.</p>
+</header>
+
+<main>
+  <div id="aviso"></div>
+
+  <div class="panel">
+    <h2>Agregar producto</h2>
+    <div class="fila">
+      <input id="nombre" placeholder="Nombre">
+      <input id="precio" type="number" placeholder="Precio" min="0">
+      <input id="categoria" placeholder="Categoría">
+      <input id="stock" type="number" placeholder="Stock" min="0" value="0">
+      <button class="acc" onclick="crear()">Agregar</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Buscar y filtrar</h2>
+    <div class="fila">
+      <input id="buscar" placeholder="Buscar por nombre o descripción">
+      <input id="fcat" placeholder="Categoría exacta">
+      <select id="orden">
+        <option value="creado_en">Más recientes</option>
+        <option value="precio">Precio</option>
+        <option value="nombre">Nombre</option>
+        <option value="stock">Stock</option>
+      </select>
+      <select id="dir">
+        <option value="asc">Ascendente</option>
+        <option value="desc">Descendente</option>
+      </select>
+      <button onclick="cargar(1)">Aplicar</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Productos <span id="total" class="id"></span></h2>
+    <table>
+      <thead><tr><th>Nombre</th><th>Precio</th><th>Categoría</th>
+                 <th>Stock</th><th>id</th><th></th></tr></thead>
+      <tbody id="filas"></tbody>
+    </table>
+    <div class="fila" style="margin-top:12px">
+      <button class="peq" onclick="irA(pagina-1)">Anterior</button>
+      <span id="pag" style="align-self:center"></span>
+      <button class="peq" onclick="irA(pagina+1)">Siguiente</button>
+    </div>
+  </div>
+</main>
+
+<footer>Desarrollo Web y Aplicaciones Móviles · cliente mínimo, sin dependencias</footer>
+
+<script>
+const API = '/api/productos';
+let pagina = 1, paginas = 1;
+
+function avisar(texto, esError){
+  const a = document.getElementById('aviso');
+  a.textContent = texto;
+  a.className = esError ? 'err' : 'ok';
+  a.style.display = 'block';
+  setTimeout(() => a.style.display = 'none', 4000);
+}
+
+function pesos(n){
+  return '$' + Number(n).toLocaleString('es-CL');
+}
+
+async function cargar(p){
+  pagina = p || pagina;
+  const q = new URLSearchParams({
+    pagina, tam: 8,
+    orden: document.getElementById('orden').value,
+    dir:   document.getElementById('dir').value
+  });
+  const buscar = document.getElementById('buscar').value.trim();
+  const cat    = document.getElementById('fcat').value.trim();
+  if (buscar) q.set('buscar', buscar);
+  if (cat)    q.set('categoria', cat);
+
+  try {
+    const r = await fetch(`${API}?${q}`);
+    const cuerpo = await r.json();
+    if (!r.ok) { avisar(cuerpo.error || 'Error al listar', true); return; }
+
+    paginas = cuerpo.paginacion.paginas || 1;
+    document.getElementById('total').textContent =
+      `(${cuerpo.paginacion.total} en total)`;
+    document.getElementById('pag').textContent = `Página ${pagina} de ${paginas}`;
+
+    document.getElementById('filas').innerHTML = cuerpo.datos.map(p => `
+      <tr>
+        <td>${escapar(p.nombre)}</td>
+        <td>${pesos(p.precio)}</td>
+        <td>${escapar(p.categoria || '—')}</td>
+        <td>${p.stock ?? 0}</td>
+        <td class="id">${p.id}</td>
+        <td><button class="peq del" onclick="borrar('${p.id}')">Borrar</button></td>
+      </tr>`).join('') ||
+      '<tr><td colspan="6" style="color:var(--muted)">Sin resultados.</td></tr>';
+  } catch (e) {
+    avisar('No se pudo contactar la API. ¿Está corriendo python run.py?', true);
+  }
+}
+
+function escapar(t){
+  return String(t).replace(/[&<>"]/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+
+async function crear(){
+  const cuerpo = {
+    nombre:    document.getElementById('nombre').value.trim(),
+    categoria: document.getElementById('categoria').value.trim() || null,
+    stock:     Number(document.getElementById('stock').value) || 0
+  };
+
+  // OJO: Number('') devuelve 0, no NaN. Si se enviara el campo sin mirar si
+  // venia vacio, un precio en blanco llegaria a la API como 0 y se guardaria
+  // un producto gratis. El cliente no inventa valores: si no hay precio, no
+  // se manda el campo y la API responde 400 con su mensaje.
+  const precioTexto = document.getElementById('precio').value.trim();
+  if (precioTexto !== '') cuerpo.precio = Number(precioTexto);
+  const r = await fetch(API, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(cuerpo)
+  });
+  const datos = await r.json();
+  if (r.status === 201){
+    avisar(`Creado con id ${datos.id}`, false);
+    ['nombre','precio','categoria'].forEach(i =>
+      document.getElementById(i).value = '');
+    document.getElementById('stock').value = 0;
+    cargar(1);
+  } else {
+    // Muestra el detalle campo por campo que devuelve la API.
+    const d = datos.detalle
+      ? ' — ' + Object.entries(datos.detalle).map(([k,v]) => `${k}: ${v}`).join('; ')
+      : '';
+    avisar((datos.error || 'Error') + d, true);
+  }
+}
+
+async function borrar(id){
+  const r = await fetch(`${API}/${id}`, {method: 'DELETE'});
+  if (r.status === 204){ avisar('Producto eliminado', false); cargar(); }
+  else { const d = await r.json(); avisar(d.error || 'Error al eliminar', true); }
+}
+
+function irA(p){
+  if (p >= 1 && p <= paginas) cargar(p);
+}
+
+cargar(1);
+</script>
+</body>
+</html>
